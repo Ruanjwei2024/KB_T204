@@ -18,11 +18,15 @@
 
 | 亮点 | 说明 |
 |---|---|
-| **合规友好** | 全部数据来自 FASB / SEC / Fed / AICPA 等公开源 |
+| **合规友好** | 全部数据来自 FASB / SEC / IRS / Fed / Basel 等公开源 |
 | **多 Provider 切换** | 一套代码同时支持 AWS Bedrock / MiniMax API / 本地 Ollama |
 | **本地可调试** | 无需 AWS 也无需付费 API，本地 + Ollama + BGE 即可跑通 |
 | **AWS 闭环** | 比赛环境跑在 AWS 内网，零出网，符合金融合规 |
 | **可引用回答** | 每个回答强制标注原文片段来源，避免幻觉 |
+| **多准则对比** | 同一议题自动分别检索 US GAAP / IFRS / SEC Rules，生成并排对比表与差异摘要 |
+| **知识图谱视图** | 基于文档、准则与术语关键词构建可交互图谱，快速识别知识盲区 |
+| **多格式解析** | PDF / HTML / XBRL / Markdown / TXT 统一入库 |
+| **中英双语** | 界面与 AI 回答语言跟随选择，一键切换 |
 
 ---
 
@@ -31,9 +35,11 @@
 ```
 ┌────────────────────────────────────────────────────────┐
 │  Streamlit UI  (本地)                                   │
-│  ├─ 上传 PDF                                            │
-│  ├─ 测试 LLM / Embedding                                │
-│  └─ 提问 + 引用展示                                      │
+│  ├─ 侧边栏: 上传文档 (PDF/HTML/XBRL/MD/TXT)            │
+│  ├─ 右上角 ⚙ 设置: 语言切换 + API 连通性测试           │
+│  ├─ 提问 + 引用展示                                     │
+│  ├─ 多准则对比 (US GAAP / IFRS / SEC Rules)             │
+│  └─ 知识图谱 (pyvis 交互视图)                           │
 └──────────────────┬─────────────────────────────────────┘
                    │
       ┌────────────┴────────────┐
@@ -67,20 +73,86 @@
 | LLM | AWS Bedrock (Claude 3.5 Sonnet) / MiniMax API / Ollama (Qwen 2.5) |
 | Embedding | Amazon Titan v2 / MiniMax / BAAI BGE (本地) |
 | 向量库 | FAISS (本地) / OpenSearch (AWS) |
-| PDF 解析 | pypdf |
+| 文档解析 | pypdf (PDF) / BeautifulSoup (HTML) / xml.etree (XBRL) / Markdown / TXT |
+| 图谱 | pyvis |
+| 国际化 | 自建 `i18n.py` (中英各 64 个 key) |
 | 环境管理 | python-dotenv |
+
+---
+
+## 🎤 项目介绍 PPT
+
+按公司模板视觉风格生成的 11 页中文项目介绍 PPT，产物：
+
+```
+D:\working\T204\slides\output\LedgerMind-托管资产会计AI智库-项目介绍.pptx
+D:\working\T204\slides_en\output\LedgerMind-Custody-Accounting-AI-KB-English.pptx   # 英文版
+```
+
+两版页面结构、配色、版式完全一致，英文版字体改用 Arial，其余逐页重新配平（英文比中文长，
+字号和文本框宽度都做了调整）。中文版原稿不受英文版改动影响。
+
+重新生成：
+
+```powershell
+cd D:\working\T204\slides
+node lint.js        # 预编译检查: 拒绝中文全角标点 / 智能引号
+node compile.js     # 编译 11 页到 output/
+python check_deck.py  # 静态校验: 画布越界 / 页码 / 颜色 / 占位文本
+powershell -ExecutionPolicy Bypass -File .\render_png.ps1  # 逐页渲染 PNG 复核
+
+cd D:\working\T204\slides_en
+node lint.js        # 英文版检查: 源码不得出现任何 CJK 字符
+node compile.js     # 编译英文版
+python ..\slides\check_deck.py .\output\LedgerMind-Custody-Accounting-AI-KB-English.pptx Arial
+powershell -ExecutionPolicy Bypass -File ..\slides\render_png.ps1 -BaseDir D:\working\T204\slides_en
+```
+
+页面结构：封面 / 目录 / 章节页 01 / 六大痛点 / 知识孤岛四类风险 / 八大挑战 /
+章节页 02 / 三大核心能力 / 技术架构与合规 / 演示价值与差异化 / THANKS。11 页均带演讲者备注。
+
+模板仿制要点：蓝底(304EFC) + 白色圆角卡片 + 红黄绿窗口圆点 + 超大章节数字压边，
+中文版字体沿用模板实际的微软雅黑。源码为每页一个 `slide-NN.js`，同步导出
+`createSlide(pres, theme)`，`theme.js` 只保留 primary/secondary/accent/light/bg 五个键。
+
+---
+
+## 📐 技术文档
+
+面向维护者的技术说明：[ARCHITECTURE.md](./ARCHITECTURE.md)
+
+涵盖运行架构与数据流、五个核心模块的实现细节、函数接口契约、embedding 维度等
+关键不变量、provider 扩展指南、已验证的故障排查表、已知限制与合规红线。
+
+本 README 面向使用者与评委；架构、接口契约和排障细节看 `ARCHITECTURE.md`。
 
 ---
 
 ## 📂 目录结构
 
 ```
-D:\working\
-├── rag_skeleton.py          # 主程序 (~600 行,单文件)
+D:\working\T204\
+├── ARCHITECTURE.md        # 技术架构与实现说明(维护者向)
+├── rag_skeleton.py          # 主程序 (1140 行 / 27 个顶层函数 / 1 个类)
+├── i18n.py                  # 中英文案 (各 64 个 key)
 ├── requirements.txt         # Python 依赖(已验证兼容组合)
 ├── .env.example             # 环境变量模板
-├── .env                     # 实际配置(本地调试用,不在 git)
+├── .env                     # 实际配置(含真实 key,禁止提交 / 泄露)
 ├── README.md                # 本文件
+├── data/                    # 演示语料 (IRS PDF / SEC XML / Basel HTML / MD)
+├── slides/                  # 中文版 PPT 源码
+│   ├── theme.js             # 5 键主题
+│   ├── lib.js               # 共享设计令牌与模板组件
+│   ├── slide-01..11.js      # 每页一个模块
+│   ├── lint.js              # 预编译检查(禁止中文全角标点)
+│   ├── compile.js           # 编译入口
+│   ├── check_deck.py        # 静态校验
+│   ├── dump_text.py         # 导出全文供内容 QA
+│   ├── render_png.ps1       # PowerPoint COM 渲染(支持 -BaseDir)
+│   ├── previews/            # 逐页渲染图
+│   ├── template_previews/   # 模板原页渲染图(比对用)
+│   └── output/              # 产出的 pptx
+├── slides_en/               # 英文版 PPT 源码(结构同上, 字体 Arial)
 └── vector_store/            # FAISS 索引和元数据(自动生成)
     ├── faiss.index
     └── metadata.pkl
@@ -205,15 +277,18 @@ streamlit run rag_skeleton.py
 ## 🗺️ 后续计划（P1 / P2）
 
 ### Day 2：差异化功能
-- [ ] **多准则对比**：US GAAP vs IFRS 在托管业务上的差异表
+- [x] **多准则对比**：US GAAP / IFRS / SEC Rules 并排对比表 + 差异摘要
+- [x] **知识图谱视图**：基于文档、准则与术语关键词的交互式图谱
+- [x] **多格式解析**：PDF / HTML / XBRL / Markdown / TXT 统一入库
+- [x] **中英双语**：界面与 AI 回答语言跟随设置菜单切换
 - [ ] **合规清单生成**：输入业务场景 → 输出涉及的所有监管报告
 - [ ] **多轮对话记忆**：让 demo 更像产品
 
 ### Day 3：演示打磨
-- [ ] 准备 3 份核心演示文档
+- [x] 准备 4 份核心演示文档 (IRS P550 / P552 / P559 / P946)
+- [x] 项目介绍 PPT (11 页，按公司模板风格)
 - [ ] 写 3 分钟演示脚本
 - [ ] 录制 demo 视频
-- [ ] 写立项 PPT(架构图 + 合规说明 + 成本预估)
 
 ### 锦上添花
 - [ ] 时间线视图

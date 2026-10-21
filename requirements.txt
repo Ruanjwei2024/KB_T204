@@ -1,6 +1,10 @@
 # =====================================================
-# 账枢 LedgerMind — 依赖(已验证兼容组合)
-# 关键: numpy 1.26 + scipy <1.13 + faiss-cpu 1.8 + sentence-transformers
+# 账枢 LedgerMind — 依赖（本机已验证可跑通的组合）
+# 已验证组合:
+#   numpy 1.26.4 + scipy 1.12.0 + scikit-learn 1.3.2
+#   + faiss-cpu 1.8.0.post1 + sentence-transformers 6.1.0
+#   + torch 2.14.1+cpu + torchvision 0.29.1+cpu
+# numpy 必须锁在 1.x:faiss-cpu 1.8 尚未支持 numpy 2.x 的 ABI
 # =====================================================
 
 # 基础
@@ -8,25 +12,31 @@ streamlit>=1.32.0
 requests>=2.31.0
 python-dotenv>=1.0.0
 pypdf>=4.0.0
+beautifulsoup4>=4.12.0   # HTML / XBRL 解析
 
-# ===== 三个核心包必须用同一套 numpy =====
+# ===== 以下四个包必须共用同一套 numpy =====
 # 1) numpy 必须 < 2.0(faiss-cpu 限制)
 numpy>=1.24.0,<2.0
 
-# 2) scipy 必须 < 1.13(否则用 np.long,numpy 1.x 没有)
+# 2) scipy 必须 < 1.13(1.13+ 依赖 numpy 2.x)
 scipy>=1.10,<1.13
 
-# 3) scikit-learn(随 sentence-transformers 进来,版本要老)
+# 3) scikit-learn 版本要与 scipy 1.12 匹配
 scikit-learn>=1.3,<1.4
 
 # 向量库
 faiss-cpu>=1.7.4,<1.9
 
-# 本地 embedding
-sentence-transformers>=2.2.0,<6.0   # 6.x 拉 numpy 2.x,先避免
+# 本地 embedding(sentence-transformers 6.x 已验证可用)
+sentence-transformers>=6.0
 
-# PyTorch 单独装(避免它带错版本):
-# pip install torch --index-url https://download.pytorch.org/whl/cpu
+# 知识图谱可视化
+pyvis>=0.3.0
+
+# PyTorch 需装 CPU 版,否则会拉 CUDA 依赖导致体积失控:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+torch>=2.0
+torchvision>=0.15
 
 # 可选:AWS(比赛环境)
 # boto3>=1.34.0
