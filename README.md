@@ -208,7 +208,22 @@ streamlit run rag_skeleton.py
 | `MiniMax_BASE` | URL | `https://api.MiniMax.chat/v1` | MiniMax API 地址 |
 | `LLM_MODEL_MINIMAX` | 模型名 | `MiniMax-Text-01` | MiniMax LLM 模型 |
 | `AWS_REGION` | Region | `us-east-1` | Bedrock 区域 |
-| `OS_HOST` / `OS_USER` / `OS_PASS` | 字符串 | 占位 | OpenSearch 终端 |
+| `LLM_MODEL_BEDROCK` | 模型 ID | 退役默认值 | **部署前必须改**，见下方 AWS 部署警告 |
+| `EMBED_MODEL_BEDROCK` | 模型 ID | `amazon.titan-embed-text-v2:0` | Bedrock embedding |
+| `OS_HOST` / `OS_USER` / `OS_PASS` | 字符串 | 占位 | OpenSearch 终端（只写主机名，端口固定 443） |
+| `INDEX_NAME` | 字符串 | `rag-custody` | OpenSearch 索引名 |
+
+> ⚠️ **AWS 部署必读**
+> 1. **切到 bedrock 时 `EMBED_DIM` 必须改成 1024 或 512**，不能沿用本地 bge 的 768。
+>    Titan V2 只支持 256/512/1024，维度对不上会导致**每篇文档入库都被拒**。
+>    代码启动时会检测并告警，必要时跑 `python _test_aws_config.py` 自检。
+> 2. **默认的 `anthropic.claude-3-5-sonnet-20240620-v1:0` 已进入退役期**，调用会返回
+>    `ResourceNotFoundException`。先跑
+>    `aws bedrock list-foundation-models --region <你的region> --by-output-format json`
+>    确认可用模型，再写进 `.env`。
+> 3. **只能用 OpenSearch Service 托管域**（`*.es.amazonaws.com`），Serverless 需要 SigV4
+>    签名，本项目用的 Basic 认证连不上。
+> 4. AWS 凭证别写进 `.env`：boto3 走默认凭证链（EC2 用实例配置文件）。
 
 ### 常用 Provider 组合
 

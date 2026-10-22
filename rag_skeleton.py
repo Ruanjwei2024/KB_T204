@@ -49,13 +49,27 @@ LOCAL_EMBED_MODEL = os.getenv("LOCAL_EMBED_MODEL", "BAAI/bge-base-zh-v1.5")
 EMBED_DIM           = int(os.getenv("EMBED_DIM", "768"))
 
 AWS_REGION          = os.getenv("AWS_REGION", "us-east-1")
-LLM_MODEL_BEDROCK   = "anthropic.claude-3-5-sonnet-20240620-v1:0"
-EMBED_MODEL_BEDROCK = "amazon.titan-embed-text-v2:0"
+# 模型 ID 可用环境变量覆盖。默认值只用于本地,部署前必须在 .env 里显式指定 --
+# 见 _DEPRECATED_BEDROCK_MODELS 的启动自检警告。
+LLM_MODEL_BEDROCK   = os.getenv("LLM_MODEL_BEDROCK", "anthropic.claude-3-5-sonnet-20240620-v1:0")
+EMBED_MODEL_BEDROCK = os.getenv("EMBED_MODEL_BEDROCK", "amazon.titan-embed-text-v2:0")
+
+# Bedrock 生命周期表中已标记 Legacy / EOL 的 Claude 模型。
+# 只作为"提醒你去核实"的白名单,不阻断启动 -- EOL 日期按 region 不同,
+# 某模型可能在本 region 已退役、在另一个 region 仍可调用,以实测为准。
+_DEPRECATED_BEDROCK_MODELS = {
+    "anthropic.claude-3-sonnet-20240229-v1:0",
+    "anthropic.claude-3-5-sonnet-20240620-v1:0",
+    "anthropic.claude-3-5-sonnet-20241022-v2:0",
+    "anthropic.claude-3-7-sonnet-20250219-v1:0",
+    "anthropic.claude-3-haiku-20240307-v1:0",
+    "anthropic.claude-sonnet-4-20250514-v1:0",
+}
 
 OS_HOST    = os.getenv("OS_HOST", "your-search-domain.us-east-1.es.amazonaws.com")
 OS_USER    = os.getenv("OS_USER", "master")
 OS_PASS    = os.getenv("OS_PASS", "YourStrongPassword_123")
-INDEX_NAME = "rag-custody"
+INDEX_NAME = os.getenv("INDEX_NAME", "rag-custody")
 
 # 用脚本所在目录,避免相对路径的权限问题
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -187,9 +201,13 @@ def test_embedding_api() -> tuple[bool, str]:
     """测试 embedding API 是否能正常返回向量"""
     if EMBED_PROVIDER == "bedrock":
         try:
+            # 带 dimensions 一起测,这样能提前暴露 EMBED_DIM 非法值
+            # (Titan V2 只接受 256/512/1024)。这是最省事的前置体检。
             r = bedrock.invoke_model(
                 modelId=EMBED_MODEL_BEDROCK,
-                body=json.dumps({"inputText": "test"}),
+                body=json.dumps({"inputText": "test",
+                                 "dimensions": EMBED_DIM,
+                                 "normalize": True}),
                 contentType="application/json", accept="application/json",
             )
             emb = json.loads(r["body"].read())["embedding"]
@@ -338,7 +356,14 @@ def chunk(text, size=600, overlap=80):
 def _embed_bedrock(texts):
     out = []
     for t in texts:
-        body = json.dumps({"inputText": t[:8000]})
+        # Titan V2 只接受 256 / 512 / 1024 维(默认 1024),必须显式传 dimensions。
+        # 不传时会静默返回 1024 维,而 OpenSearch mapping 是按 EMBED_DIM 建的,
+        # 结果是每条文档的 bulk 写入都被拒。
+        body = json.dumps({
+            "inputText": t[:8000],
+            "dimensions": EMBED_DIM,
+            "normalize": True,
+        })
         r = bedrock.invoke_model(
             modelId=EMBED_MODEL_BEDROCK, body=body,
             contentType="application/json", accept="application/json",
@@ -934,6 +959,13 @@ def t(key: str, **kwargs) -> str:
 
 
 st.set_page_config(page_title="LedgerMind", page_icon="📒", layout="wide")
+
+# ---- 启动自检:Bedrock 模型 ID 退役提醒 ----
+# 不阻断启动(EOL 日期按 region 而异),但必须提醒去核实。
+if LLM_PROVIDER == "bedrock" and LLM_MODEL_BEDROCK in _DEPRECATED_BEDROCK_MODELS:
+    st.warning(t("warn_retired_model", model=LLM_MODEL_BEDROCK, region=AWS_REGION))
+if EMBED_PROVIDER == "bedrock" and EMBED_DIM not in (256, 512, 1024):
+    st.warning(t("warn_bad_embed_dim", dim=EMBED_DIM))
 
 # ---- 右上角设置菜单(popover):语言切换 + API 连通性测试 ----
 LANG_FLAGS = {"zh": "🇨🇳", "en": "🇺🇸"}

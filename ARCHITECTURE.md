@@ -136,12 +136,28 @@ VECTOR_STORE    = faiss | opensearch
 
 | 常量 | 默认 | 说明 |
 |---|---|---|
-| `INDEX_NAME` | `rag-custody` | OpenSearch 索引名，硬编码 |
-| `SCRIPT_DIR` | `Path(__file__).resolve().parent` | **不要改成相对路径**，Windows 下会触发 `PermissionError` |
-| `EMBED_DIM` | `768` | 必须与 embedding 模型实际输出维度一致 |
-| `LLM_MODEL_BEDROCK` | `anthropic.claude-3-5-sonnet-20240620-v1:0` | 硬编码，不走环境变量 |
-| `EMBED_MODEL_BEDROCK` | `amazon.titan-embed-text-v2:0` | 硬编码 |
+| `INDEX_NAME` | `rag-custody` | OpenSearch 索引名，可用 `INDEX_NAME` 覆盖 |
+| `LLM_MODEL_BEDROCK` | `anthropic.claude-3-5-sonnet-20240620-v1:0` | 可用环境变量覆盖，见下方警告 |
+| `EMBED_MODEL_BEDROCK` | `amazon.titan-embed-text-v2:0` | 可用环境变量覆盖 |
 | `OS_HOST` / `OS_PASS` | 占位串 | **代码里有硬编码默认密码，接真实环境前必须用环境变量覆盖** |
+| `EMBED_DIM` | `768` | 必须与 embedding 模型实际输出维度一致，见 §4.4 Titan 维度契约 |
+| `SCRIPT_DIR` | `Path(__file__).resolve().parent` | **不要改成相对路径**，Windows 下会触发 `PermissionError` |
+
+> ⚠️ **Bedrock 模型 ID 退役**：默认值 `anthropic.claude-3-5-sonnet-20240620-v1:0`
+> 在 Bedrock 生命周期表中已标记 Legacy —— us-east-1 的 EOL 是 2026-07-30，
+> 另有 7 个 region 为 2026-11-13。调用会返回 `ResourceNotFoundException`。
+> 部署前务必核实本 region 可用模型：
+> ```bash
+> aws bedrock list-foundation-models --region us-east-1 --by-output-format json
+> ```
+> 然后在 `.env` 里设 `LLM_MODEL_BEDROCK`。代码内置 `_DEPRECATED_BEDROCK_MODELS`
+> 白名单，命中时页面顶部会弹告警（**不阻断启动**，因为 EOL 日期按 region 而异，
+> 某个模型可能在本 region 已退役、在另一个 region 仍可调用，必须实测）。
+
+> ⚠️ **temperature 兼容性**：`_ask_bedrock()` 和 `compare_standards()` 都发
+> `temperature: 0.2`。Anthropic 弃用说明提到 Claude 4.7+ 及 Sonnet 5 这类新模型
+> 对非默认 `temperature` / `top_p` / `top_k` 会返回 400。升级到新模型后如果开始
+> 报 400，先把 `temperature` 去掉再试。
 
 启动时会做一次 `vector_store/` 目录的写入探测，失败则 `st.stop()` 并提示权限问题。
 这是为了提前暴露 Windows 目录权限问题，而不是等到索引写入时才失败。
@@ -203,6 +219,15 @@ embed(texts, type_="db")
 ```
 
 **`_embed_bedrock`**：逐条调用（**没有批量接口**），每条截断到 8000 字符。
+请求体带 `dimensions: EMBED_DIM` 和 `normalize: True`。
+
+> ⚠️ **Titan V2 维度契约**：Amazon Titan Text Embeddings V2 **只接受 256 / 512 / 1024**
+> （默认 1024）。`dimensions` 必须显式传，否则会静默返回 1024 维。
+> 如果 `EMBED_DIM` 配成 768（本地 bge-base 的值），OpenSearch mapping 会按 768 建，
+> 而 Bedrock 实际返回 1024 维向量，**每一篇文档的 bulk 写入都会被拒**。
+> 切到 bedrock 后务必把 `EMBED_DIM` 改成 1024 或 512。
+> 启动时若检测到非法维度会在页面顶部告警；设置菜单里的「测试 Embedding API」
+> 按钮会带 `dimensions` 发一次请求，能在上传文档之前就把问题暴露出来。
 
 **`_embed_local`**：`SentenceTransformer.encode(normalize_embeddings=True)`，
 返回值已 L2 归一化，numpy 转 list。模型**懒加载**并缓存在模块级 `_local_model`，
@@ -485,12 +510,31 @@ LLM_PROVIDER=bedrock
 EMBED_PROVIDER=bedrock
 VECTOR_STORE=opensearch
 AWS_REGION=us-east-1
-OS_HOST=<真实 endpoint>
+
+# ★ EMBED_DIM 必须改成 1024(或 512),不能沿用本地 bge 的 768
+EMBED_DIM=1024
+
+# ★ 模型 ID 先查可用范围再填,不要用默认值
+LLM_MODEL_BEDROCK=<查 list-foundation-models 后得到的可用 ID>
+EMBED_MODEL_BEDROCK=amazon.titan-embed-text-v2:0
+
+OS_HOST=<真实 endpoint,只写主机名>
 OS_USER=<...>
 OS_PASS=<...>
+INDEX_NAME=rag-custody
 ```
 
-`boto3` / `opensearch-py` 需要额外安装（`requirements.txt` 中已注释）。
+`boto3` / `opensearch-py` 需要额外安装（`requirements.txt` 中已注释）：
+
+```bash
+pip install boto3 opensearch-py
+```
+
+**凭证**：`boto3` 走默认凭证链，EC2 上用实例配置文件，不要把 AK/SK 写进 `.env`。
+OpenSearch 的用户名密码因为代码用的是 HTTP Basic 认证，只能放 `.env`。
+
+**必须用 OpenSearch Service 托管域**（域名形如 `*.es.amazonaws.com`）。
+Serverless（`*.aoss.amazonaws.com`）只接受 SigV4 签名，而代码签不了，会直接 403。
 
 内网闭环要点：**模型与向量检索全部走 VPC 内网 endpoint，不出公网**，
 满足零出网合规要求。
@@ -606,6 +650,7 @@ D:\working\T204\
 ├── requirements.txt      已验证的依赖组合
 ├── .env.example          环境变量模板
 ├── download_demo_data.py 演示语料下载脚本
+├── _test_aws_config.py    Bedrock embedding 请求体单测(桩对象,无需联网)
 ├── data/                 演示语料（公开资料）
 │   ├── IRS_P550_Investment_Income.pdf     投资收入
 │   ├── IRS_P552_Recordkeeping.pdf         记录保存
@@ -636,3 +681,5 @@ D:\working\T204\
 - [ ] 改了 `search()` 返回结构 → 同步改 Tab1 / Tab2 的引用渲染
 - [ ] 新增文档格式 → 保留 `len(text) < 50` 的失败出口
 - [ ] 设置菜单里的两个连通性测试按钮能测到新 provider
+- [ ] 换 Bedrock 模型 → 确认 `temperature` 没触发 400（新模型可能拒绝非默认值）
+- [ ] 跑 `python _test_aws_config.py` 确认 embedding 请求体带 `dimensions`

@@ -29,6 +29,20 @@ TRANSLATIONS = {
         "llm_api_fail": "❌ LLM 失败",
         "hf_blocked_warning": "💡 国内访问 huggingface.co 不稳定,请设环境变量后重启:\n  `$env:HF_ENDPOINT='https://hf-mirror.com'`\n  `streamlit run rag_skeleton.py`",
 
+        # --- 启动自检 ---
+        "warn_retired_model":
+            "⚠️ 当前 LLM 模型 `{model}` 在 AWS Bedrock 生命周期表中已标记为 Legacy/退役,"
+            "调用可能返回 ResourceNotFoundException。\n\n"
+            "请先核实本 region 可用模型:\n"
+            "  `aws bedrock list-foundation-models --region {region} --by-output-format json`\n\n"
+            "确认后在 .env 里设置 `LLM_MODEL_BEDROCK` 为可用模型 ID。",
+        "warn_bad_embed_dim":
+            "⚠️ `EMBED_DIM={dim}` 不是 Amazon Titan Text Embeddings V2 的合法取值。\n\n"
+            "Titan V2 只支持 **256 / 512 / 1024**,默认 1024。"
+            "若沿用本地 bge 模型的 768,OpenSearch mapping 会建成 768 维,"
+            "而 Bedrock 实际返回 1024 维向量,导致**每一篇文档的入库都被拒绝**。\n\n"
+            "请把 .env 的 `EMBED_DIM` 改为 1024(或 512)。",
+
         "sidebar_docs": "📄 上传文档",
         "upload_label": "选择文档 (PDF / HTML / XBRL / MD / TXT)",
         "upload_hint": "支持 PDF、HTML、XBRL、Markdown、TXT",
@@ -133,6 +147,21 @@ TRANSLATIONS = {
         "embed_api_fail": "❌ Embedding API failed",
         "llm_api_fail": "❌ LLM failed",
         "hf_blocked_warning": "💡 huggingface.co is unstable in CN, set env var and restart:\n  `$env:HF_ENDPOINT='https://hf-mirror.com'`\n  `streamlit run rag_skeleton.py`",
+
+        # --- startup self-check ---
+        "warn_retired_model":
+            "⚠️ The current LLM model `{model}` is flagged Legacy/retired in the AWS Bedrock "
+            "model lifecycle table. Calls may fail with ResourceNotFoundException.\n\n"
+            "Check which models are available in this region first:\n"
+            "  `aws bedrock list-foundation-models --region {region} --by-output-format json`\n\n"
+            "Then set `LLM_MODEL_BEDROCK` in .env to an available model ID.",
+        "warn_bad_embed_dim":
+            "⚠️ `EMBED_DIM={dim}` is not a valid value for Amazon Titan Text Embeddings V2.\n\n"
+            "Titan V2 only supports **256 / 512 / 1024**, default 1024. "
+            "If you keep 768 from the local BGE model, the OpenSearch mapping is built at 768 "
+            "while Bedrock returns 1024-dimensional vectors, so **every document write is "
+            "rejected**.\n\n"
+            "Set `EMBED_DIM` to 1024 (or 512) in .env.",
 
         "sidebar_docs": "📄 Upload Documents",
         "upload_label": "Choose documents (PDF / HTML / XBRL / MD / TXT)",
